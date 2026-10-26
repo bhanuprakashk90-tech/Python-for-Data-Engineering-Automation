@@ -1,91 +1,67 @@
-# Python-for-Data-Engineering-Automation
-# Autonomous End-to-End ETL Pipeline & Ingestion Engine
+# Web Scraper & Automated SQL Ingestion Pipeline
 
-An end-to-end data pipeline built in Python that extracts structured records from multi-page web portals, transforms and cleans raw data, and ingests records into a relational database using idempotent batch upserts. The system is orchestrated to run on a schedule, logs execution traces, and dispatches automated summary alerts upon completion.
+A lightweight, end-to-end Python pipeline that scrapes multi-page web data, cleans it up, and loads it into a SQL database. It uses batch upserts to handle duplicate records safely and runs on a schedule with built-in logging and alert notifications.
+
+I built this project across three main steps:
+1. Scraping data safely from paginated pages.
+2. Building an idempotent database loader (preventing duplicate entries).
+3. Wiring everything together into an automated scheduled job.
 
 ---
 
-## Architecture Overview
+## What It Does
 
 ```text
-┌─────────────────────────┐     ┌─────────────────────────┐     ┌─────────────────────────┐
-│     1. EXTRACTION       │ ──► │     2. TRANSFORMATION   │ ──► │       3. LOADING        │
-│ Multi-Page Web Scraper  │     │ Clean Strings & Formats │     │ Idempotent SQL Upsert   │
-└─────────────────────────┘     └─────────────────────────┘     └─────────────────────────┘
+[ Web Pages ] ──> [ BeautifulSoup Scraper ] ──> [ Data Cleaner ] ──> [ SQL Database (Upsert) ]
                                                                              │
                                                                              ▼
-                                                                ┌─────────────────────────┐
-                                                                │  ORCHESTRATION & ALERT  │
-                                                                │  Schedule, Log & Report │
-                                                                └─────────────────────────┘
-Core Pipeline Tasks
-Task 1: Autonomous Web Scraper & Data Extractor
-Dynamic Extraction: Navigates paginated web listings using requests with custom User-Agent headers and polite request delays.
+                                                                  [ Logging & Webhook Alert ]
 
-HTML Parsing: Extracts structured elements (title, author/price, tags/metadata) using BeautifulSoup4 CSS selectors.
+1. Web Extraction (requests + BeautifulSoup4)
+Crawls paginated listings while handling basic anti-scraping checks (rotating User-Agent headers and adding request delays).
 
-Dataset Export: Parsed records are stored in both UTF-8 encoded CSV and formatted JSON files.
+Parses raw HTML tags to extract fields like titles, authors/prices, and metadata tags.
 
-Volume: Collects 100+ clean records per crawling session.
+Exports a standalone copy of the dataset as quotes_100_records.csv and quotes_100_records.json (100+ items minimum).
 
-Task 2: Relational Database Ingestion & Upsert Engine
-Schema Definition: Configures relational database structures (SQLite / SQLAlchemy) with PRIMARY KEY and UNIQUE field constraints.
+2. Database Loading & Upsert Engine (SQLite / SQLAlchemy)
+Auto-creates the database schema on launch if it doesn't already exist.
 
-Idempotent Upserts: Implements INSERT ... ON CONFLICT DO UPDATE batch execution to prevent duplicate records during repeated runs.
+Enforces a UNIQUE constraint on natural keys (the quote text).
 
-Transaction Safety: Enforces atomic transactions using explicit commit() and rollback() logic.
+Uses INSERT ... ON CONFLICT DO UPDATE (upsert logic). Re-running the pipeline updates existing rows instead of crashing or inserting duplicate entries.
 
-Data Verification: Built-in SQL verification queries and Pandas integrations test row counts, integrity, and schema compliance.
+Employs atomic transactions (commit and rollback) to protect data integrity if a network error occurs mid-load.
 
-Task 3: Scheduled ETL Orchestrator & Alerting System
-Pipeline Modularization: Combines extract(), transform(), and load() methods inside an object-oriented Python runner class.
+Pipeline Scheduling & Alerts (logging + schedule)
+Wraps Extract, Transform, and Load operations inside an object-oriented Python runner (ETLPipeline).
 
-Trace Logging: Logs execution timestamps, record volumes, and error traces to both standard output and a dedicated pipeline.log file.
+Writes operational logs (timestamps, success metrics, error stack traces) to both stdout and pipeline.log.
 
-Automated Scheduling: Executable on automated timers via Python's schedule package, Linux crontab, or a background systemd daemon.
+Dispatches execution summaries via Webhook (Discord/Slack) or console alerts.
 
-Alert Notifications: Formats and dispatches job completion summaries (Status, Duration, Ingested Record Counts) via Webhook (Slack/Discord/Teams) or logging alerts.
+Configured to run on a timer loop or as a background Linux cron job.
 
-Dataset Schema & Output Format
-Target Relational Database Table (target_records)
-Column Name	Data Type	Constraints	Description
-id	INTEGER	PRIMARY KEY AUTOINCREMENT	Unique surrogate key identifier
-quote	TEXT	NOT NULL UNIQUE	Natural key targeted for conflict resolution
-author	TEXT	NOT NULL	Author, vendor, or entity name
-tags	TEXT	NULLABLE	Comma-separated category tags or metadata
-ingested_at	TIMESTAMP	DEFAULT CURRENT_TIMESTAMP	Ingestion timestamp
-Sample JSON Output Record
-JSON
-[
-    {
-        "quote": "“The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking.”",
-        "author": "Albert Einstein",
-        "tags": "change, deep-thoughts, thinking, world"
-    }
-]
-Project Directory Structure
-Plaintext
-├── etl_pipeline.py          # Unified Autonomous Pipeline & Orchestrator Script
-├── quotes_100_records.csv   # Standalone Scraped CSV Dataset (100+ Records)
-├── quotes_100_records.json  # Standalone Scraped JSON Dataset (100+ Records)
-├── etl_production.db        # SQLite Relational Database Storage
-├── pipeline.log             # Timestamped Operational Trace Log File
-└── README.md                # Technical Documentation
-Quick Start & Execution
-Prerequisites
-Bash
+
+Database SchemaTable Name: target_recordsColumnTypeConstraintsNotesidINTEGERPRIMARY KEY AUTOINCREMENTAuto-generated row IDquoteTEXTNOT NULL UNIQUETargeted for conflict checkingauthorTEXTNOT NULLItem author or entitytagsTEXTNULLABLEComma-separated categoriesingested_atTIMESTAMPDEFAULT CURRENT_TIMESTAMPLast updated timestamp
+
+Project Structure
+├── etl_pipeline.py          # Main ETL script with scheduler and logging
+├── quotes_100_records.csv   # Scraped CSV dataset output
+├── quotes_100_records.json  # Scraped JSON dataset output
+├── etl_production.db        # SQLite database file
+├── pipeline.log             # Execution and error logs
+└── README.md                # Project documentation
+
+How to Run It
+1. Install Dependencies
 pip install requests beautifulsoup4 pandas sqlalchemy schedule
-Run the Pipeline
-Bash
+
+2. Run the Script Directly
 python etl_pipeline.py
-Server Deployment (Linux Crontab)
-To execute the ETL runner automatically every day at 2:00 AM:
 
-Bash
+3. Set Up as a Daily Cron Job (Linux)
+To run the job automatically every night at 2:00 AM:
+crontab -e
+
 0 2 * * * /usr/bin/python3 /path/to/etl_pipeline.py >> /path/to/cron_output.log 2>&1
-
----
-
-Congratulations on completing all three data engineering modules step-by-step!
-
-<FollowUp label="Would you like me to show you how to push this local folder and code to a new GitHub repository?" query="Show me step-by-step Git commands to initialize and push this project to a new GitHub repository."/>
